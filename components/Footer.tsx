@@ -2,7 +2,8 @@
 
 import Link from 'next/link';
 import Image from 'next/image';
-import { Instagram, Music, Youtube, Mail, ShieldCheck, Lock, CreditCard, MapPin, Phone } from 'lucide-react';
+import { Instagram, Youtube, Mail, ShieldCheck, Lock, CreditCard, MapPin, Phone } from 'lucide-react';
+import { SiTiktok } from 'react-icons/si';
 import NewsletterSignup from './NewsletterSignup';
 import LogoIcon from './LogoIcon';
 
@@ -44,7 +45,7 @@ export default function Footer() {
                                 aria-label="Follow us on TikTok" 
                                 className="w-10 h-10 rounded-full bg-white/10 flex items-center justify-center hover:bg-[#74D644] hover:text-[#0E5B3D] text-white transition-all hover:scale-110 focus:outline-none"
                             >
-                                <Music className="w-5 h-5" />
+                                <SiTiktok className="w-5 h-5" />
                             </Link>
 
                             {/* YouTube */}
