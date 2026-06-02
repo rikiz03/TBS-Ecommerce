@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import Image from 'next/image';
-import { Instagram, Twitter, Youtube, Mail, ShieldCheck, Lock, CreditCard, MapPin, Phone } from 'lucide-react';
+import { Instagram, TikTok, Youtube, Mail, ShieldCheck, Lock, CreditCard, MapPin, Phone } from 'lucide-react';
 import NewsletterSignup from './NewsletterSignup';
 import LogoIcon from './LogoIcon';
 
@@ -38,13 +38,13 @@ export default function Footer() {
                                 <Instagram className="w-5 h-5" />
                             </Link>
 
-                            {/* X (Twitter) */}
+                            {/* TikTok */}
                             <Link 
                                 href="#" 
-                                aria-label="Follow us on X" 
+                                aria-label="Follow us on TikTok" 
                                 className="w-10 h-10 rounded-full bg-white/10 flex items-center justify-center hover:bg-[#74D644] hover:text-[#0E5B3D] text-white transition-all hover:scale-110 focus:outline-none"
                             >
-                                <Twitter className="w-5 h-5" />
+                                <TikTok className="w-5 h-5" />
                             </Link>
 
                             {/* YouTube */}
