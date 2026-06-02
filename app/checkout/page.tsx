@@ -1,0 +1,504 @@
+'use client';
+
+import { useCartStore, useSettingsStore } from '@/lib/store';
+import { SignedIn, SignedOut, SignInButton, useUser } from '@clerk/nextjs';
+import Image from 'next/image';
+import Link from 'next/link';
+import { useState, useEffect } from 'react';
+import { Lock, MapPin, Truck, CreditCard, Loader2, Globe, ShieldCheck, Trash2, Landmark, AlertCircle } from 'lucide-react';
+import dynamic from 'next/dynamic';
+import { formatPrice } from '@/lib/geo';
+
+const PaystackCheckout = dynamic(() => import('@/components/PaystackCheckout'), { ssr: false });
+const FlutterwaveCheckout = dynamic(() => import('@/components/FlutterwaveCheckout'), { ssr: false });
+const TransferPayment = dynamic(() => import('@/components/TransferPayment'), { ssr: false });
+const PayoneerButton = dynamic(() => import('@/components/PayoneerButton'), { ssr: false });
+
+export default function CheckoutPage() {
+    const { items, removeItem, updateQuantity, total, clearCart, shippingFee, setShippingFee } = useCartStore();
+    const { currency, countryCode, setCountryCode } = useSettingsStore();
+    const { user } = useUser();
+    const [mounted, setMounted] = useState(false);
+    const [step, setStep] = useState(1); // 1: Cart, 2: Shipping, 3: Payment
+    const [email, setEmail] = useState('');
+    const [fullName, setFullName] = useState('');
+    const [city, setCity] = useState('');
+    const [isVerifying, setIsVerifying] = useState(false);
+    const [isCalculatingShipping, setIsCalculatingShipping] = useState(false);
+    const [paymentMethod, setPaymentMethod] = useState<'standard' | 'transfer' | 'flutterwave' | 'payoneer'>('standard');
+    const [showTransferFallback, setShowTransferFallback] = useState(false);
+
+    // List of African country codes to filter payment gateways
+    const AFRICAN_COUNTRIES = ['NG', 'ZA', 'KE', 'GH', 'TZ', 'UG', 'RW', 'CI', 'SN', 'CM', 'ET', 'EG', 'MA', 'DZ', 'TN'];
+    const isAfrican = AFRICAN_COUNTRIES.includes(countryCode);
+
+    // Global Default Payment Method
+    useEffect(() => {
+        if (mounted && !paymentMethod) {
+            setPaymentMethod('standard');
+        }
+    }, [mounted, paymentMethod]);
+
+    // Automatically calculate shipping when country or items change
+    useEffect(() => {
+        const calculateShipping = async () => {
+            if (items.length === 0) return;
+            
+            setIsCalculatingShipping(true);
+            try {
+                const res = await fetch('/api/shipping/calculate', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ items, countryCode })
+                });
+                const data = await res.json();
+                if (data.fee !== undefined) {
+                    setShippingFee(data.fee);
+                }
+            } catch (error) {
+                console.error('Shipping calc failed:', error);
+            } finally {
+                setIsCalculatingShipping(false);
+            }
+        };
+
+        if (mounted) {
+            calculateShipping();
+        }
+    }, [countryCode, items, mounted, setShippingFee]);
+
+    useEffect(() => {
+        if (user) {
+            setEmail(user.primaryEmailAddress?.emailAddress || '');
+        }
+    }, [user]);
+
+    useEffect(() => {
+        setMounted(true);
+    }, []);
+
+    // Abandoned Cart Trigger
+    useEffect(() => {
+        if (!email || items.length === 0 || step < 2) return;
+
+        const timer = setTimeout(async () => {
+            try {
+                await fetch('/api/cart/abandoned', {
+                    method: 'POST',
+                    body: JSON.stringify({
+                        email,
+                        items,
+                        total: total(),
+                        fullName,
+                        countryCode
+                    })
+                });
+            } catch (e) {
+                console.error('Abandoned cart log failed', e);
+            }
+        }, 2000); // Debounce by 2 seconds
+
+        return () => clearTimeout(timer);
+    }, [email, items, total, fullName, countryCode, step]);
+
+    const handlePaystackSuccess = async (reference: any) => {
+        setIsVerifying(true);
+        try {
+            // Verify payment on the server
+            const response = await fetch(`/api/paystack/verify?reference=${reference.reference}`);
+            const data = await response.json();
+
+            if (data.status === 'success') {
+                // Sync to fulfillment partners
+                await syncOrder(reference.reference);
+                clearCart();
+                window.location.href = "/checkout/success";
+            } else {
+                alert("Payment verification failed. Please contact support.");
+            }
+        } catch (error) {
+            console.error('Error verifying payment:', error);
+            alert("An error occurred during payment verification.");
+        } finally {
+            setIsVerifying(false);
+        }
+    };
+
+    const handleFlutterwaveSuccess = async (res: any) => {
+        const orderId = res.transaction_id || Date.now().toString();
+        await syncOrder(orderId);
+        clearCart();
+        window.location.href = "/checkout/success";
+    };
+
+    const syncOrder = async (orderId: string) => {
+        try {
+            await fetch('/api/fulfillment/sync-order', {
+                method: 'POST',
+                body: JSON.stringify({
+                    orderId: orderId,
+                    fullName,
+                    city,
+                    countryCode,
+                    total: total(),
+                    items: items.map(item => ({
+                        productId: item.id,
+                        title: item.title,
+                        quantity: item.quantity,
+                        supplier: item.supplier || 'UNKNOWN',
+                        externalProductId: item.externalId || ''
+                    }))
+                }),
+            });
+        } catch (syncError) {
+            console.error('Fulfillment sync failed:', syncError);
+        }
+    };
+
+    // Calculate display shipping fee (subtracting the $10 already built into product prices)
+    const totalQuantity = items.reduce((acc, item) => acc + item.quantity, 0);
+    const displayShippingFee = Math.max(0, shippingFee - (10 * totalQuantity));
+    const orderTotal = total() + displayShippingFee;
+
+    if (!mounted) return <div className="p-10 dark:bg-[#0a0a0a] dark:text-white">Loading...</div>;
+
+    if (items.length === 0) {
+        return (
+            <div className="container mx-auto px-4 py-16 text-center dark:bg-[#0a0a0a] dark:text-white">
+                <h1 className="text-2xl font-bold mb-4">Your Shopping Cart is empty.</h1>
+                <p className="mb-8 text-gray-600 dark:text-gray-400">
+                    Your shopping cart lives to serve. Give it purpose — fill it with
+                    groceries, electronics, fashion, home essentials and more.
+                </p>
+                <Link href="/" className="text-blue-600 hover:underline">
+                    Continue shopping at Three Brothers' Stores
+                </Link>
+            </div>
+        );
+    }
+
+    return (
+        <div className="bg-gray-50 dark:bg-[#0a0a0a] min-h-screen pb-20 dark:text-white transition-colors duration-300">
+            <div className="container mx-auto px-4 py-8">
+                <h1 className="text-2xl font-medium mb-6 dark:text-white">Checkout ({items.length} items)</h1>
+
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                    <div className="lg:col-span-2 space-y-6">
+
+                        {/* Step 1: Review Items */}
+                        <div className={`bg-white dark:bg-gray-900/40 rounded-lg shadow-sm border dark:border-gray-800 p-6 ${step > 1 ? 'border-l-4 border-l-green-500' : 'border-gray-200'}`}>
+                            <div className="flex justify-between items-center mb-4 cursor-pointer" onClick={() => setStep(1)}>
+                                <h2 className={`text-lg font-bold ${step === 1 ? 'text-orange-700 dark:text-orange-500' : 'text-gray-800 dark:text-gray-200'}`}>1. Review items and shipping</h2>
+                                {step > 1 && <span className="text-sm text-blue-600 dark:text-blue-400 hover:underline">Change</span>}
+                            </div>
+
+                            {(step === 1) && (
+                                <div className="space-y-6">
+                                    {items.map((item) => (
+                                        <div key={item.id} className="flex gap-4 border-b border-gray-100 dark:border-gray-800 pb-6 last:border-0">
+                                            <div className="relative w-24 h-24 flex-shrink-0 bg-white dark:bg-gray-800 rounded-lg p-2">
+                                                <Image src={item.image} alt={item.title} fill className="object-contain" />
+                                            </div>
+                                            <div className="flex-1">
+                                                <h3 className="font-bold text-gray-800 dark:text-gray-100 mb-1 leading-tight">{item.title}</h3>
+                                                <p className="text-green-700 dark:text-green-500 text-sm font-medium mb-2">In Stock</p>
+                                                <div className="flex items-center gap-3 mb-2">
+                                                    <span className="text-[10px] font-bold bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300 px-2 py-1 rounded">Qty: {item.quantity}</span>
+                                                    <button 
+                                                        onClick={() => removeItem(item.id)} 
+                                                        className="text-red-500 hover:text-red-600 text-xs flex items-center gap-1 transition-colors group"
+                                                    >
+                                                        <Trash2 className="w-3.5 h-3.5 group-hover:scale-110 transition-transform" />
+                                                        <span>Remove</span>
+                                                    </button>
+                                                </div>
+                                            </div>
+                                            <div className="text-right font-bold text-gray-900 dark:text-white">
+                                                {formatPrice(item.price, currency)}
+                                            </div>
+                                        </div>
+                                    ))}
+                                    <button
+                                        onClick={() => setStep(2)}
+                                        className="bg-yellow-400 hover:bg-yellow-500 text-gray-900 font-bold px-8 py-3 rounded-xl shadow-md transition-all active:scale-95"
+                                    >
+                                        Proceed to checkout
+                                    </button>
+                                </div>
+                            )}
+                        </div>
+
+                        {/* Step 2: Shipping Address */}
+                        <div className={`bg-white dark:bg-gray-900/40 rounded-lg shadow-sm border dark:border-gray-800 p-6 ${step > 2 ? 'border-l-4 border-l-green-500' : 'border-gray-200'}`}>
+                            <div className="flex justify-between items-center mb-4 cursor-pointer" onClick={() => step > 2 && setStep(2)}>
+                                <h2 className={`text-lg font-bold ${step === 2 ? 'text-orange-700 dark:text-orange-500' : 'text-gray-800 dark:text-gray-200'}`}>2. Shipping address</h2>
+                                {step > 2 && <span className="text-sm text-blue-600 dark:text-blue-400 hover:underline">Change</span>}
+                            </div>
+
+                            {step === 2 && (
+                                <div className="space-y-4">
+                                    <SignedOut>
+                                        <div className="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-md text-sm text-blue-800 dark:text-blue-300 mb-4 border border-blue-100 dark:border-blue-900/30">
+                                            Please <SignInButton><span className="font-bold underline cursor-pointer">sign in</span></SignInButton> to save your address.
+                                        </div>
+                                    </SignedOut>
+
+                                    <form className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                        <div className="md:col-span-2">
+                                            <label className="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-1">Email Address</label>
+                                            <input
+                                                type="email"
+                                                value={email}
+                                                onChange={(e) => setEmail(e.target.value)}
+                                                required
+                                                placeholder="Required for payment"
+                                                className="w-full border border-gray-300 dark:border-gray-700 rounded p-2 focus:ring-2 focus:ring-yellow-400 focus:outline-none bg-white dark:bg-gray-800 dark:text-white"
+                                            />
+                                        </div>
+                                        <div className="md:col-span-2">
+                                            <label className="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-1">Country / Region</label>
+                                            <select
+                                                value={countryCode}
+                                                onChange={(e) => setCountryCode(e.target.value)}
+                                                className="w-full border border-gray-300 dark:border-gray-700 rounded p-2 focus:ring-2 focus:ring-yellow-400 focus:outline-none bg-white dark:bg-gray-800 dark:text-white"
+                                            >
+                                                <option value="US">United States (Free Shipping)</option>
+                                                <option value="GB">United Kingdom</option>
+                                                <option value="NG">Nigeria</option>
+                                                <option value="CA">Canada</option>
+                                                <option value="AU">Australia</option>
+                                                <option value="FR">France (Free Shipping)</option>
+                                                <option value="DE">Germany (Free Shipping)</option>
+                                                <option value="ES">Spain (Free Shipping)</option>
+                                                <option value="IT">Italy (Free Shipping)</option>
+                                                <option value="ZA">South Africa</option>
+                                                <option value="KE">Kenya</option>
+                                                <option value="GH">Ghana</option>
+                                            </select>
+                                            <p className="text-[10px] text-gray-500 mt-1">Free shipping for USA and EU. Differential rates applied to other regions.</p>
+                                        </div>
+                                        <div>
+                                            <label className="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-1">Full Name</label>
+                                            <input 
+                                                type="text" 
+                                                value={fullName}
+                                                onChange={(e) => setFullName(e.target.value)}
+                                                className="w-full border border-gray-300 dark:border-gray-700 rounded p-2 focus:ring-2 focus:ring-yellow-400 focus:outline-none bg-white dark:bg-gray-800 dark:text-white" 
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-1">Street Address</label>
+                                            <input type="text" className="w-full border border-gray-300 dark:border-gray-700 rounded p-2 focus:ring-2 focus:ring-yellow-400 focus:outline-none bg-white dark:bg-gray-800 dark:text-white" />
+                                        </div>
+                                        <div>
+                                            <label className="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-1">City</label>
+                                            <input 
+                                                type="text" 
+                                                value={city}
+                                                onChange={(e) => setCity(e.target.value)}
+                                                className="w-full border border-gray-300 dark:border-gray-700 rounded p-2 focus:ring-2 focus:ring-yellow-400 focus:outline-none bg-white dark:bg-gray-800 dark:text-white" 
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-1">State / Zip Code</label>
+                                            <input type="text" className="w-full border border-gray-300 dark:border-gray-700 rounded p-2 focus:ring-2 focus:ring-yellow-400 focus:outline-none bg-white dark:bg-gray-800 dark:text-white" />
+                                        </div>
+                                    </form>
+                                    <button
+                                        onClick={() => {
+                                            if (!email) {
+                                                alert("Please enter your email address for payment verification.");
+                                                return;
+                                            }
+                                            setStep(3);
+                                        }}
+                                        className="bg-yellow-400 hover:bg-yellow-500 text-gray-900 font-bold px-8 py-3 rounded-xl shadow-md transition-all active:scale-95 mt-4"
+                                    >
+                                        Use this address
+                                    </button>
+                                </div>
+                            )}
+                        </div>
+
+                        {/* Step 3: Payment */}
+                        <div className={`bg-white dark:bg-gray-900/40 rounded-lg shadow-sm border dark:border-gray-800 p-6 ${step === 3 ? 'border-l-4 border-l-orange-500' : 'border-gray-200'}`}>
+                            <div className="flex justify-between items-center mb-4">
+                                <h2 className={`text-lg font-bold ${step === 3 ? 'text-orange-700 dark:text-orange-500' : 'text-gray-800 dark:text-gray-200'}`}>3. Payment method</h2>
+                            </div>
+
+                            {step === 3 && (
+                                <div className="space-y-6">
+                                    <div className="flex flex-col md:flex-row gap-4 mb-6">
+                                        <button
+                                            onClick={() => setPaymentMethod('standard')}
+                                            className={`flex-1 p-4 border rounded-lg flex flex-col items-center gap-2 transition-all ${paymentMethod === 'standard' ? 'border-blue-600 bg-blue-50 dark:bg-blue-900/20 ring-1 ring-blue-600' : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 bg-white dark:bg-gray-800'}`}
+                                        >
+                                            <div className="bg-blue-100 dark:bg-blue-900/40 p-2 rounded-full"><ShieldCheck className="w-5 h-5 text-blue-700 dark:text-blue-400" /></div>
+                                            <span className="font-bold text-gray-800 dark:text-gray-100 text-center">Standard Secure Pay</span>
+                                            <span className="text-xs text-gray-500 dark:text-gray-400 text-center">Card, Apple & Google Pay</span>
+                                        </button>
+
+                                        <button
+                                            onClick={() => setPaymentMethod('flutterwave')}
+                                            className={`flex-1 p-4 border rounded-lg flex flex-col items-center gap-2 transition-all ${paymentMethod === 'flutterwave' ? 'border-orange-600 bg-orange-50 dark:bg-orange-900/20 ring-1 ring-orange-600' : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 bg-white dark:bg-gray-800'}`}
+                                        >
+                                            <div className="bg-orange-100 dark:bg-orange-900/40 p-2 rounded-full"><Globe className="w-5 h-5 text-orange-700 dark:text-orange-400" /></div>
+                                            <span className="font-bold text-gray-800 dark:text-gray-100 text-center">Alternative Secure Pay</span>
+                                            <span className="text-xs text-gray-500 dark:text-gray-400 text-center">Secondary Option</span>
+                                        </button>
+
+                                        <button
+                                            onClick={() => setPaymentMethod('payoneer')}
+                                            className={`flex-1 p-4 border rounded-lg flex flex-col items-center gap-2 transition-all ${paymentMethod === 'payoneer' ? 'border-purple-600 bg-purple-50 dark:bg-purple-900/20 ring-1 ring-purple-600' : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 bg-white dark:bg-gray-800'}`}
+                                        >
+                                            <div className="bg-purple-100 dark:bg-purple-900/40 p-2 rounded-full"><CreditCard className="w-5 h-5 text-purple-700 dark:text-purple-400" /></div>
+                                            <span className="font-bold text-gray-800 dark:text-gray-100 text-center">Global Card Pay</span>
+                                            <span className="text-xs text-gray-500 dark:text-gray-400 text-center">Secure Checkout</span>
+                                        </button>
+
+                                        <button
+                                            onClick={() => setPaymentMethod('transfer')}
+                                            className={`flex-1 p-4 border rounded-lg flex flex-col items-center gap-2 transition-all ${paymentMethod === 'transfer' ? 'border-blue-600 bg-blue-50 dark:bg-blue-900/20 ring-1 ring-blue-600' : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 bg-white dark:bg-gray-800'}`}
+                                        >
+                                            <div className="bg-green-100 dark:bg-green-900/40 p-2 rounded-full"><Landmark className="w-5 h-5 text-green-700 dark:text-green-400" /></div>
+                                            <span className="font-bold text-gray-800 dark:text-gray-100 text-center">USD Bank Transfer</span>
+                                            <span className="text-xs text-gray-500 dark:text-gray-400 text-center">Recommended for Large Orders</span>
+                                        </button>
+                                    </div>
+
+                                    <div className="border border-blue-600 bg-blue-50 dark:bg-blue-900/20 p-4 rounded-md flex items-start gap-3">
+                                        <div className="mt-1"><Lock className="w-4 h-4 text-blue-700 dark:text-blue-400" /></div>
+                                        <p className="text-sm text-blue-800 dark:text-blue-300">
+                                            Your payment is secure and encrypted. We use industry-standard SSL encryption for all transactions. No card details are stored on our servers.
+                                        </p>
+                                    </div>
+
+                                    {isVerifying ? (
+                                        <div className="flex flex-col items-center justify-center py-10 gap-3">
+                                            <Loader2 className="w-8 h-8 text-blue-600 animate-spin" />
+                                            <p className="text-gray-500 font-medium">Verifying payment...</p>
+                                        </div>
+                                    ) : (
+                                        <div className="mt-6">
+                                            {showTransferFallback && paymentMethod === 'standard' && (
+                                                <div className="mb-6 p-4 bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-800 rounded-lg flex items-start gap-3 animate-in fade-in slide-in-from-top-2">
+                                                    <AlertCircle className="w-5 h-5 text-orange-600 mt-0.5" />
+                                                    <div>
+                                                        <p className="text-sm font-bold text-orange-800 dark:text-orange-400">Payment Unsuccessful or Cancelled?</p>
+                                                        <p className="text-xs text-orange-700 dark:text-orange-500 mb-3">If you encountered issues with Apple/Google Pay, you can try our alternative secure checkout.</p>
+                                                        <button 
+                                                            onClick={() => {
+                                                                setPaymentMethod('flutterwave');
+                                                                setShowTransferFallback(false);
+                                                            }}
+                                                            className="text-xs bg-orange-600 text-white px-3 py-1.5 rounded font-bold hover:bg-orange-700 transition-colors"
+                                                        >
+                                                            Switch to Alternative Pay
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            )}
+                                            {paymentMethod === 'standard' ? (
+                                                <PaystackCheckout
+                                                    email={email}
+                                                    amount={total()}
+                                                    metadata={{
+                                                        cartItems: items.map(i => i.id)
+                                                    }}
+                                                    onSuccess={handlePaystackSuccess}
+                                                    onClose={() => console.log('Payment modal closed')}
+                                                    onPaymentClosed={() => setShowTransferFallback(true)}
+                                                />
+                                            ) : paymentMethod === 'payoneer' ? (
+                                                <PayoneerButton
+                                                    orderId={`ORD-TX-${Date.now()}`}
+                                                    amount={orderTotal}
+                                                    email={email}
+                                                    fullName={fullName}
+                                                    city={city}
+                                                />
+                                            ) : paymentMethod === 'transfer' ? (
+                                                <TransferPayment
+                                                    orderId={`ORD-TX-${Date.now()}`}
+                                                    amount={orderTotal}
+                                                    email={email}
+                                                    fullName={fullName}
+                                                />
+                                            ) : paymentMethod === 'flutterwave' ? (
+                                                <FlutterwaveCheckout 
+                                                    email={email}
+                                                    amount={total() + displayShippingFee}
+                                                    onSuccess={handleFlutterwaveSuccess}
+                                                    onClose={() => console.log('Payment closed')}
+                                                />
+                                            ) : (
+                                                <div className="p-4 bg-gray-100 rounded-lg text-center">
+                                                    <p className="text-gray-600">Please select a payment method above.</p>
+                                                </div>
+                                            )}
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+                        </div>
+                    </div>
+
+                    {/* Right Column: Order Summary */}
+                    <div className="lg:col-span-1">
+                        <div className="bg-white dark:bg-gray-900/40 rounded-lg shadow-sm border border-gray-200 dark:border-gray-800 p-6 sticky top-24">
+                            <button
+                                onClick={() => step === 3 ? alert("Please complete payment using the method selected.") : setStep(step + 1)}
+                                className="w-full bg-yellow-400 hover:bg-yellow-500 text-gray-900 font-bold py-3 rounded-xl shadow-md transition-all active:scale-95 mb-4 text-sm"
+                            >
+                                {step === 3 ? 'Step 3: Complete Payment' : 'Proceed to checkout'}
+                            </button>
+
+                            <p className="text-xs text-center text-gray-500 dark:text-gray-400 mb-6">
+                                By placing your order, you agree to Three Brothers' Stores' <a href="/privacy-policy" className="text-blue-600 dark:text-blue-400 hover:underline">privacy notice</a> and <a href="/terms-conditions" className="text-blue-600 dark:text-blue-400 hover:underline">conditions of use</a>.
+                            </p>
+
+                            <h3 className="font-bold text-lg mb-4 dark:text-white">Order Summary</h3>
+                            <div className="space-y-2 text-sm text-gray-600 dark:text-gray-400">
+                                <div className="flex justify-between">
+                                    <span>Items ({items.length}):</span>
+                                    <span className="text-gray-900 dark:text-gray-100 font-medium">{formatPrice(total(), currency)}</span>
+                                </div>
+                                <div className="flex justify-between">
+                                    <span>Shipping & handling:</span>
+                                    {isCalculatingShipping ? (
+                                        <div className="flex items-center gap-1">
+                                            <Loader2 className="w-3 h-3 animate-spin text-blue-600" />
+                                            <span className="text-xs">Calculating...</span>
+                                        </div>
+                                    ) : (
+                                        <span className={displayShippingFee > 0 ? 'text-gray-900 dark:text-white font-bold' : 'text-green-700 dark:text-green-500 font-bold'}>
+                                            {displayShippingFee > 0 ? formatPrice(displayShippingFee, currency) : 'FREE'}
+                                        </span>
+                                    )}
+                                </div>
+                                <div className="flex justify-between">
+                                    <span>Total before tax:</span>
+                                    <span className="text-gray-900 dark:text-gray-100">{formatPrice(total() + displayShippingFee, currency)}</span>
+                                </div>
+                                <div className="flex justify-between">
+                                    <span>Estimated tax:</span>
+                                    <span className="text-gray-900 dark:text-gray-100">{formatPrice(0, currency)}</span>
+                                </div>
+                                <div className="border-t border-gray-200 dark:border-gray-800 pt-3 flex justify-between font-bold text-red-700 dark:text-red-500 text-lg">
+                                    <span>Order Total:</span>
+                                    <span>{formatPrice(orderTotal, currency)}</span>
+                                </div>
+                            </div>
+                            
+                            {displayShippingFee === 0 && (
+                                <div className="mt-4 p-2 bg-green-50 dark:bg-green-900/20 border border-green-100 dark:border-green-900/30 rounded text-[10px] text-green-700 dark:text-green-400 text-center font-bold">
+                                    You saved {formatPrice(10 * totalQuantity, currency)} on shipping!
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+}
