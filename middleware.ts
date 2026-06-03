@@ -1,4 +1,5 @@
 import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server";
+import { NextRequest } from "next/server";
 
 const isPublicRoute = createRouteMatcher([
     '/',
@@ -18,11 +19,14 @@ const isPublicRoute = createRouteMatcher([
     '/api/cart/(.*)',
 ]);
 
-export default clerkMiddleware(async (auth, request) => {
-    if (!isPublicRoute(request)) {
-        // Protected routes (like /admin) would go here
-    }
-});
+export async function middleware(request: NextRequest) {
+    return clerkMiddleware(async (auth, req) => {
+        if (!isPublicRoute(req)) {
+            // Protected routes (like /admin) would go here
+            await auth.protect();
+        }
+    })(request);
+}
 
 export const config = {
     matcher: [
