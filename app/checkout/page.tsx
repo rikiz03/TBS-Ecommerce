@@ -5,12 +5,10 @@ import { SignedIn, SignedOut, SignInButton, useUser } from '@clerk/nextjs';
 import Image from 'next/image';
 import Link from 'next/link';
 import { useState, useEffect } from 'react';
-import { Lock, MapPin, Truck, CreditCard, Loader2, Globe, ShieldCheck, Trash2, Landmark, AlertCircle } from 'lucide-react';
+import { Lock, CreditCard, Loader2, Trash2, Landmark } from 'lucide-react';
 import dynamic from 'next/dynamic';
 import { formatPrice } from '@/lib/geo';
 
-const PaystackCheckout = dynamic(() => import('@/components/PaystackCheckout'), { ssr: false });
-const FlutterwaveCheckout = dynamic(() => import('@/components/FlutterwaveCheckout'), { ssr: false });
 const TransferPayment = dynamic(() => import('@/components/TransferPayment'), { ssr: false });
 const PayoneerButton = dynamic(() => import('@/components/PayoneerButton'), { ssr: false });
 
@@ -25,19 +23,9 @@ export default function CheckoutPage() {
     const [city, setCity] = useState('');
     const [isVerifying, setIsVerifying] = useState(false);
     const [isCalculatingShipping, setIsCalculatingShipping] = useState(false);
-    const [paymentMethod, setPaymentMethod] = useState<'standard' | 'transfer' | 'flutterwave' | 'payoneer'>('standard');
-    const [showTransferFallback, setShowTransferFallback] = useState(false);
+    const [paymentMethod, setPaymentMethod] = useState<'transfer' | 'payoneer'>('transfer');
 
-    // List of African country codes to filter payment gateways
-    const AFRICAN_COUNTRIES = ['NG', 'ZA', 'KE', 'GH', 'TZ', 'UG', 'RW', 'CI', 'SN', 'CM', 'ET', 'EG', 'MA', 'DZ', 'TN'];
-    const isAfrican = AFRICAN_COUNTRIES.includes(countryCode);
 
-    // Global Default Payment Method
-    useEffect(() => {
-        if (mounted && !paymentMethod) {
-            setPaymentMethod('standard');
-        }
-    }, [mounted, paymentMethod]);
 
     // Automatically calculate shipping when country or items change
     useEffect(() => {
@@ -101,35 +89,6 @@ export default function CheckoutPage() {
         return () => clearTimeout(timer);
     }, [email, items, total, fullName, countryCode, step]);
 
-    const handlePaystackSuccess = async (reference: any) => {
-        setIsVerifying(true);
-        try {
-            // Verify payment on the server
-            const response = await fetch(`/api/paystack/verify?reference=${reference.reference}`);
-            const data = await response.json();
-
-            if (data.status === 'success') {
-                // Sync to fulfillment partners
-                await syncOrder(reference.reference);
-                clearCart();
-                window.location.href = "/checkout/success";
-            } else {
-                alert("Payment verification failed. Please contact support.");
-            }
-        } catch (error) {
-            console.error('Error verifying payment:', error);
-            alert("An error occurred during payment verification.");
-        } finally {
-            setIsVerifying(false);
-        }
-    };
-
-    const handleFlutterwaveSuccess = async (res: any) => {
-        const orderId = res.transaction_id || Date.now().toString();
-        await syncOrder(orderId);
-        clearCart();
-        window.location.href = "/checkout/success";
-    };
 
     const syncOrder = async (orderId: string) => {
         try {
@@ -171,7 +130,7 @@ export default function CheckoutPage() {
                     groceries, electronics, fashion, home essentials and more.
                 </p>
                 <Link href="/" className="text-blue-600 hover:underline">
-                    Continue shopping at Three Brothers' Stores
+                    Continue shopping at Three Brothers&apos; Stores
                 </Link>
             </div>
         );
@@ -330,24 +289,6 @@ export default function CheckoutPage() {
                                 <div className="space-y-6">
                                     <div className="flex flex-col md:flex-row gap-4 mb-6">
                                         <button
-                                            onClick={() => setPaymentMethod('standard')}
-                                            className={`flex-1 p-4 border rounded-lg flex flex-col items-center gap-2 transition-all ${paymentMethod === 'standard' ? 'border-blue-600 bg-blue-50 dark:bg-blue-900/20 ring-1 ring-blue-600' : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 bg-white dark:bg-gray-800'}`}
-                                        >
-                                            <div className="bg-blue-100 dark:bg-blue-900/40 p-2 rounded-full"><ShieldCheck className="w-5 h-5 text-blue-700 dark:text-blue-400" /></div>
-                                            <span className="font-bold text-gray-800 dark:text-gray-100 text-center">Standard Secure Pay</span>
-                                            <span className="text-xs text-gray-500 dark:text-gray-400 text-center">Card, Apple & Google Pay</span>
-                                        </button>
-
-                                        <button
-                                            onClick={() => setPaymentMethod('flutterwave')}
-                                            className={`flex-1 p-4 border rounded-lg flex flex-col items-center gap-2 transition-all ${paymentMethod === 'flutterwave' ? 'border-orange-600 bg-orange-50 dark:bg-orange-900/20 ring-1 ring-orange-600' : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 bg-white dark:bg-gray-800'}`}
-                                        >
-                                            <div className="bg-orange-100 dark:bg-orange-900/40 p-2 rounded-full"><Globe className="w-5 h-5 text-orange-700 dark:text-orange-400" /></div>
-                                            <span className="font-bold text-gray-800 dark:text-gray-100 text-center">Alternative Secure Pay</span>
-                                            <span className="text-xs text-gray-500 dark:text-gray-400 text-center">Secondary Option</span>
-                                        </button>
-
-                                        <button
                                             onClick={() => setPaymentMethod('payoneer')}
                                             className={`flex-1 p-4 border rounded-lg flex flex-col items-center gap-2 transition-all ${paymentMethod === 'payoneer' ? 'border-purple-600 bg-purple-50 dark:bg-purple-900/20 ring-1 ring-purple-600' : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 bg-white dark:bg-gray-800'}`}
                                         >
@@ -380,36 +321,7 @@ export default function CheckoutPage() {
                                         </div>
                                     ) : (
                                         <div className="mt-6">
-                                            {showTransferFallback && paymentMethod === 'standard' && (
-                                                <div className="mb-6 p-4 bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-800 rounded-lg flex items-start gap-3 animate-in fade-in slide-in-from-top-2">
-                                                    <AlertCircle className="w-5 h-5 text-orange-600 mt-0.5" />
-                                                    <div>
-                                                        <p className="text-sm font-bold text-orange-800 dark:text-orange-400">Payment Unsuccessful or Cancelled?</p>
-                                                        <p className="text-xs text-orange-700 dark:text-orange-500 mb-3">If you encountered issues with Apple/Google Pay, you can try our alternative secure checkout.</p>
-                                                        <button 
-                                                            onClick={() => {
-                                                                setPaymentMethod('flutterwave');
-                                                                setShowTransferFallback(false);
-                                                            }}
-                                                            className="text-xs bg-orange-600 text-white px-3 py-1.5 rounded font-bold hover:bg-orange-700 transition-colors"
-                                                        >
-                                                            Switch to Alternative Pay
-                                                        </button>
-                                                    </div>
-                                                </div>
-                                            )}
-                                            {paymentMethod === 'standard' ? (
-                                                <PaystackCheckout
-                                                    email={email}
-                                                    amount={total()}
-                                                    metadata={{
-                                                        cartItems: items.map(i => i.id)
-                                                    }}
-                                                    onSuccess={handlePaystackSuccess}
-                                                    onClose={() => console.log('Payment modal closed')}
-                                                    onPaymentClosed={() => setShowTransferFallback(true)}
-                                                />
-                                            ) : paymentMethod === 'payoneer' ? (
+                                            {paymentMethod === 'payoneer' ? (
                                                 <PayoneerButton
                                                     orderId={`ORD-TX-${Date.now()}`}
                                                     amount={orderTotal}
@@ -417,24 +329,13 @@ export default function CheckoutPage() {
                                                     fullName={fullName}
                                                     city={city}
                                                 />
-                                            ) : paymentMethod === 'transfer' ? (
+                                            ) : (
                                                 <TransferPayment
                                                     orderId={`ORD-TX-${Date.now()}`}
                                                     amount={orderTotal}
                                                     email={email}
                                                     fullName={fullName}
                                                 />
-                                            ) : paymentMethod === 'flutterwave' ? (
-                                                <FlutterwaveCheckout 
-                                                    email={email}
-                                                    amount={total() + displayShippingFee}
-                                                    onSuccess={handleFlutterwaveSuccess}
-                                                    onClose={() => console.log('Payment closed')}
-                                                />
-                                            ) : (
-                                                <div className="p-4 bg-gray-100 rounded-lg text-center">
-                                                    <p className="text-gray-600">Please select a payment method above.</p>
-                                                </div>
                                             )}
                                         </div>
                                     )}
@@ -454,7 +355,7 @@ export default function CheckoutPage() {
                             </button>
 
                             <p className="text-xs text-center text-gray-500 dark:text-gray-400 mb-6">
-                                By placing your order, you agree to Three Brothers' Stores' <a href="/privacy-policy" className="text-blue-600 dark:text-blue-400 hover:underline">privacy notice</a> and <a href="/terms-conditions" className="text-blue-600 dark:text-blue-400 hover:underline">conditions of use</a>.
+                                By placing your order, you agree to Three Brothers&apos; Stores&apos; <a href="/privacy-policy" className="text-blue-600 dark:text-blue-400 hover:underline">privacy notice</a> and <a href="/terms-conditions" className="text-blue-600 dark:text-blue-400 hover:underline">conditions of use</a>.
                             </p>
 
                             <h3 className="font-bold text-lg mb-4 dark:text-white">Order Summary</h3>
