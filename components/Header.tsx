@@ -106,10 +106,7 @@ export default function Header() {
                         <LogoIcon size={40} strokeColor="#74D644" fillColor="#0E5B3D" className="group-hover:scale-105 transition-transform" />
                         <div className="flex flex-col">
                             <span className="text-xl font-black tracking-tight leading-none text-white group-hover:text-[#74D644] transition-colors">
-                                Three Brothers
-                            </span>
-                            <span className="text-[10px] font-bold tracking-widest uppercase text-lime-300">
-                                Global E-Commerce
+                                Three Brothers Stores
                             </span>
                         </div>
                     </Link>

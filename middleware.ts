@@ -20,12 +20,15 @@ const isPublicRoute = createRouteMatcher([
 ]);
 
 export async function middleware(request: NextRequest) {
-    return clerkMiddleware(async (auth, req) => {
-        if (!isPublicRoute(req)) {
-            // Protected routes (like /admin) would go here
-            await auth.protect();
-        }
-    })(request);
+    return clerkMiddleware(
+        async (auth: unknown, req: NextRequest, _event: unknown) => {
+            if (!isPublicRoute(req)) {
+                // Protected routes (like /admin) would go here
+                await (auth as { protect: () => Promise<void> }).protect();
+            }
+        },
+        {}
+    );
 }
 
 export const config = {

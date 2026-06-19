@@ -18,10 +18,7 @@ export default function Footer() {
                             <LogoIcon size={48} strokeColor="#74D644" fillColor="#0E5B3D" className="group-hover:scale-105 transition-transform" />
                             <div className="flex flex-col">
                                 <span className="text-2xl font-black tracking-tight leading-none text-white group-hover:text-[#74D644] transition-colors">
-                                    Three Brothers
-                                </span>
-                                <span className="text-xs font-bold tracking-widest uppercase text-lime-300">
-                                    Global E-Commerce
+                                    Three Brothers Stores
                                 </span>
                             </div>
                         </Link>
@@ -31,7 +28,9 @@ export default function Footer() {
                         <div className="flex gap-3 pt-2">
                             {/* Instagram */}
                             <Link 
-                                href="#" 
+                                href="https://www.instagram.com/three_brothers_stores?igsh=anRwa2FqMWNqem5h" 
+                                target="_blank"
+                                rel="noopener noreferrer"
                                 aria-label="Follow us on Instagram" 
                                 className="w-10 h-10 rounded-full bg-white/10 flex items-center justify-center hover:bg-[#74D644] hover:text-[#0E5B3D] text-white transition-all hover:scale-110 focus:outline-none"
                             >
@@ -49,7 +48,9 @@ export default function Footer() {
 
                             {/* YouTube */}
                             <Link 
-                                href="#" 
+                                href="https://youtube.com/@three_brothers_tech?si=hLrGqNZPymHO7XmE" 
+                                target="_blank"
+                                rel="noopener noreferrer"
                                 aria-label="Follow us on YouTube" 
                                 className="w-10 h-10 rounded-full bg-white/10 flex items-center justify-center hover:bg-[#74D644] hover:text-[#0E5B3D] text-white transition-all hover:scale-110 focus:outline-none"
                             >
