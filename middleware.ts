@@ -19,17 +19,15 @@ const isPublicRoute = createRouteMatcher([
     '/api/cart/(.*)',
 ]);
 
-export async function middleware(request: NextRequest) {
-    return clerkMiddleware(
-        async (auth: unknown, req: NextRequest, _event: unknown) => {
-            if (!isPublicRoute(req)) {
-                // Protected routes (like /admin) would go here
-                await (auth as { protect: () => Promise<void> }).protect();
-            }
-        },
-        {}
-    );
-}
+export default clerkMiddleware(
+    (auth: unknown, req: NextRequest) => {
+        if (!isPublicRoute(req)) {
+            const protector = auth as { protect: () => Promise<void> };
+            return protector.protect();
+        }
+        return undefined;
+    }
+);
 
 export const config = {
     matcher: [
