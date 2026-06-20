@@ -9,6 +9,18 @@ export async function GET(req: NextRequest) {
     const dryRun = searchParams.get("dry_run") !== "false";
     const limit = parseInt(searchParams.get("limit") || "100");
 
+    // Prevent build-time/page-data failures when required env vars are missing.
+    const wcUrl = process.env.WOOCOMMERCE_URL || process.env.NEXT_PUBLIC_WOOCOMMERCE_URL;
+    if (!wcUrl || !process.env.WOOCOMMERCE_CONSUMER_KEY || !process.env.WOOCOMMERCE_CONSUMER_SECRET) {
+        return NextResponse.json(
+            {
+                error: "WooCommerce env vars are not configured (WOOCOMMERCE_URL / WOOCOMMERCE_CONSUMER_KEY / WOOCOMMERCE_CONSUMER_SECRET).",
+            },
+            { status: 500 }
+        );
+    }
+
+
     try {
         console.log("Fetching categories from WooCommerce...");
         const categoriesRes = await api.get("products/categories", { per_page: 100 });
