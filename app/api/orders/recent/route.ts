@@ -9,7 +9,8 @@ export async function GET() {
             return NextResponse.json([], { status: 200 });
         }
 
-        const response = await api.get('orders', {
+        const response = await api!.get('orders', {
+
 
             per_page: 5,
             status: ['completed', 'processing'],

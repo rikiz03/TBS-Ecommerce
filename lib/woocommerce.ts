@@ -20,10 +20,11 @@ export function getWooCommerceClient() {
 }
 
 // Backwards compatibility for existing imports.
-// Some routes import the default client; we keep it null-safe.
+// Default export may be null when WooCommerce env vars are not configured.
 const api = getWooCommerceClient();
 
 export default api;
+
 
 
 export interface WooProduct {
