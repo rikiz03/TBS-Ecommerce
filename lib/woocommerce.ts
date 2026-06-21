@@ -1,17 +1,30 @@
 import WooCommerceRestApi from "@woocommerce/woocommerce-rest-api";
 
-const wcUrl = process.env.WOOCOMMERCE_URL || process.env.NEXT_PUBLIC_WOOCOMMERCE_URL || "";
+const wcUrl = process.env.WOOCOMMERCE_URL || process.env.NEXT_PUBLIC_WOOCOMMERCE_URL;
 
-const api = new WooCommerceRestApi({
-    // WooCommerceRestApi throws "Options Error: url is required" if this is empty.
-    url: wcUrl,
-    consumerKey: process.env.WOOCOMMERCE_CONSUMER_KEY || "",
-    consumerSecret: process.env.WOOCOMMERCE_CONSUMER_SECRET || "",
-    version: "wc/v3"
-});
+// IMPORTANT:
+// Don't instantiate WooCommerceRestApi with missing env vars during build.
+// Creating it with an empty url throws: "Options Error: url is required".
+export function getWooCommerceClient() {
+    if (!wcUrl) return null;
+    const consumerKey = process.env.WOOCOMMERCE_CONSUMER_KEY;
+    const consumerSecret = process.env.WOOCOMMERCE_CONSUMER_SECRET;
+    if (!consumerKey || !consumerSecret) return null;
 
+    return new WooCommerceRestApi({
+        url: wcUrl,
+        consumerKey,
+        consumerSecret,
+        version: "wc/v3",
+    });
+}
+
+// Backwards compatibility for existing imports.
+// Some routes import the default client; we keep it null-safe.
+const api = getWooCommerceClient();
 
 export default api;
+
 
 export interface WooProduct {
     id: number;

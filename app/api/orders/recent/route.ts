@@ -5,7 +5,12 @@ export const revalidate = 60; // Cache for 60 seconds
 
 export async function GET() {
     try {
+        if (!api) {
+            return NextResponse.json([], { status: 200 });
+        }
+
         const response = await api.get('orders', {
+
             per_page: 5,
             status: ['completed', 'processing'],
             orderby: 'date',

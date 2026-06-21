@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import api from "@/lib/woocommerce";
+
 import { FEATURED_CATEGORIES, isSemanticMatch } from "@/lib/data";
 
 export const dynamic = 'force-dynamic';
@@ -22,8 +23,20 @@ export async function GET(req: NextRequest) {
 
 
     try {
+        if (!api) {
+            // Prevent build-time crashes when Vercel env vars are not configured.
+            return NextResponse.json(
+                {
+                    error: "WooCommerce REST client not initialized (missing WOOCOMMERCE_URL / NEXT_PUBLIC_WOOCOMMERCE_URL).",
+                },
+                { status: 500 }
+            );
+        }
+
         console.log("Fetching categories from WooCommerce...");
+
         const categoriesRes = await api.get("products/categories", { per_page: 100 });
+
         const realCategories = categoriesRes.data;
 
         const uncategorizedCat = realCategories.find((c: any) => c.slug === 'uncategorized');
